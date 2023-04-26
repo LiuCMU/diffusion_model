@@ -67,7 +67,7 @@ class SSIM(torch.nn.Module):
 
         return _ssim(img1, img2, window, self.window_size, channel, self.size_average)
 
-
+@torch.no_grad()
 def ssim(img1, img2, window_size=11, size_average=True):
     (_, channel, _, _) = img1.shape
     window = create_window(window_size, channel)

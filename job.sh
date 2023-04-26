@@ -3,8 +3,8 @@
 #SBATCH --nodes=1
 #SBATCH --gpus=1
 #SBATCH --ntasks-per-node=8
-#SBATCH -t 2:00:00
-#SBATCH -J decoder_encoder
+#SBATCH -t 48:00:00
+#SBATCH -J basic_diffusion
 #SBATCH -A cwr109
 #SBATCH --export=ALL
 
@@ -18,4 +18,6 @@ source /home/zhen1997/anaconda3/etc/profile.d/conda.sh
 conda activate dalle2
 
 cd "/home/zhen1997/diffusion_model"
-python test_encoder_decoder.py
+wandb online
+# python test_encoder_decoder.py
+python diffusion.py

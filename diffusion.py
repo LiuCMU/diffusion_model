@@ -32,7 +32,7 @@ from tqdm import tqdm
 
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
-os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+# os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 if torch.cuda.is_available():
     device = torch.device("cuda")
 else:
@@ -48,15 +48,14 @@ elif "exp" in hostname.lower():  #expanse
     tar_path = "/expanse/lustre/projects/cwr109/zhen1997/img_deblur.tar"
     local_scratch = f"/scratch/{os.environ['USER']}/job_{os.environ['SLURM_JOB_ID']}"
     print("computing node local scratch path: %s" % local_scratch)
-    shutil.copy(tar_path, local_scratch)
-    tar = tarfile.open(os.path.join(local_scratch, "img_deblur.tar"))
-    tar.extractall(local_scratch)
-    tar.close()
-    print("Finished extracting the dataset")
     train_path = os.path.join(local_scratch, "img_deblur/train")
     test_path = os.path.join(local_scratch, "img_deblur/test")
-
-    device = torch.device("cuda")  #only using 1 GPU
+    if os.path.exists(train_path) == False:
+        shutil.copy(tar_path, local_scratch)
+        tar = tarfile.open(os.path.join(local_scratch, "img_deblur.tar"))
+        tar.extractall(local_scratch)
+        tar.close()
+    print("Finished extracting the dataset")
 elif ("braavos" in hostname.lower()) or ( "storm" in hostname.lower()):  #braavos/stromland
     train_path = os.path.join(folder, "img_deblur/train")
     test_path = os.path.join(folder, "img_deblur/test")
@@ -103,7 +102,7 @@ class diffusion(nn.Module):
         self.sqrt_one_minus_alphas_cumpord = torch.sqrt(1 - self.alphas_cumprod)
         self.posterior_variance = self.betas * (1 - self.alphas_cumprod_prev) / (1 - self.alphas_cumprod)
 
-        self.model = Unet(image_channels=3, down_channels=(64, 128, 256, 512, 1024),
+        self.model = Unet(input_channels=3, image_channels=3, down_channels=(64, 128, 256, 512, 1024),
                           up_channels = (1024, 512, 256, 128, 64), time_emb_dim = 32)
 
     
@@ -115,10 +114,12 @@ class diffusion(nn.Module):
         
         return elements of vals that are coorespond to t"""
         batch_size = x_shape[0]
-        out = vals.gather(-1, t.cpu())
-        out_reshaped = out.reshape(batch_size, 1, 1, 1)
+        out = vals.gather(-1, t.cpu()).reshape(-1, 1)
+        # out_reshaped = out.reshape(batch_size, 1, 1, 1)
+        out_reshaped = torch.unsqueeze(torch.unsqueeze(out, -1), -1)
         return out_reshaped
-    
+
+
     def forward_diffusion(self, x0: torch.Tensor, t: torch.Tensor, device='cpu'):
         """
         x0: a single image of a batch of images
@@ -140,7 +141,6 @@ class diffusion(nn.Module):
         """
         noise = self.model(x_noisy, t)
         return noise
-    
 
 
 if __name__ == '__main__':
@@ -148,14 +148,11 @@ if __name__ == '__main__':
     parser.add_argument("--lr", type=float, default=0.001)
     parser.add_argument("--patience", type=int, default=10)
     parser.add_argument("--epochs", type=int, default=100)
-    parser.add_argument("--batch_size", type=int, default=1)
+    parser.add_argument("--batch_size", type=int, default=2)
     parser.add_argument("--diffusion_steps", type=int, default=300)
     args = parser.parse_args()
     wandb.init(project="diffusion", entity="liu97", config=args)
     config = wandb.config
-
-    state_path = os.path.join(folder, 'params/diffusion/basic.pt')
-
 
     #load datasets
     train = img_dataset(train_path, debug=False, scale=True) # debug = False
@@ -164,29 +161,31 @@ if __name__ == '__main__':
     test_loader = DataLoader(test, config.batch_size, num_workers=4)
     print("Number of training and testing: %i, %i" % (len(train), len(test)))
 
-    # enc = load_model(os.path.join(folder, 'params/dalle/encoder.pkl'), device)  #input tensor shape (B, C, H, W) ranging from -1 to 1
-    # dec = load_model(os.path.join(folder, 'params/dalle/decoder.pkl'), device)
-
     diffuser = diffusion(config.diffusion_steps).to(device)
     optimizer = torch.optim.Adam(diffuser.model.parameters(), lr=config.lr)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=config.patience, mode="min")
 
-
-    for i in tqdm(range(config.epochs)):
+    for i in range(config.epochs):
         print(f'epoch {i}')
         epoch_losses = []
-        for xs, ys in train_loader:
+        for xs, ys in tqdm(train_loader):
             xs = xs.to(device)
             ys = ys.to(device)
             optimizer.zero_grad()
-            t = torch.randint(0, config.diffusion_steps, (config.batch_size,), device=device).long()
-            x_noisy, noise = diffuser.forward_diffusion(xs, t, device)
-            noise_pred = diffuser.backward_diffusion(x_noisy, t, device)
+            t = torch.randint(0, config.diffusion_steps, (ys.shape[0],), device=device).long()
+            y_noisy, noise = diffuser.forward_diffusion(ys, t, device)
+            noise_pred = diffuser.backward_diffusion(y_noisy, t, device)
             loss = F.l1_loss(noise_pred, noise)
             loss.backward()
             optimizer.step()
             epoch_losses.append(loss.item())
 
-        if i%10 == 0:
-            torch.save(diffuser.model.state_dict(), state_path)
-        print(f'Epoch {i+1} Loss {round(np.mean(epoch_losses), 3)}')
+        if i%20 == 0:
+            torch.save(diffuser.model.state_dict(), os.path.join(folder, f'params/diffusion/basic{i}.pt'))
+        
+        epoch_loss = round(np.mean(epoch_losses), 3)
+        wandb.log({
+            'loss': epoch_loss
+        })
+        print(f'Epoch {i+1} Loss {epoch_loss}')
+    torch.save(diffuser.model.state_dict(), os.path.join(folder, f'params/diffusion/basic_final.pt'))

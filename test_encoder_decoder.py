@@ -1,3 +1,10 @@
+"""
+Reference
+Dalle-E: https://arxiv.org/abs/2102.12092
+https://github.com/openai/DALL-E/blob/master/notebooks/usage.ipynb
+Other useful pretrained encoder and decoders: https://colab.research.google.com/github/CompVis/taming-transformers/blob/master/scripts/reconstruction_usage.ipynb
+"""
+
 import wandb
 import os
 import shutil
@@ -53,18 +60,13 @@ elif ("braavos" in hostname.lower()) or ( "storm" in hostname.lower()):  #braavo
     test_path = os.path.join(folder, "img_deblur/test")
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--num_layers", type=int, default=1)
-parser.add_argument("--conv_pad", type=int, default=1)
-parser.add_argument("--hidden_channels", type=int, default=20)
-parser.add_argument("--pool_pad", type=int, default=2)
+parser.add_argument("--batchsize", type=int, default=2)
 args = parser.parse_args()
 wandb.init(project="617", entity="img_deblur", config=args)
 config = wandb.config
 
-lr = 0.0005
-patience = 10
-epochs = 1000
-batchsize = 2
+
+batchsize = config.batchsize
 
 
 def calc_PSNR(img1, img2):
@@ -92,7 +94,7 @@ dec = load_model(os.path.join(folder, 'params/dalle/decoder.pkl'), device)
 blury_psnr, blury_ssim = [], []
 sharp_psnr, sharp_ssim = [], []
 og_psnr, og_ssim = [], []
-latent_psnr, latent_ssim = [], []
+rec_psnr, rec_ssim = [], []
 for i, (xs, ys) in enumerate(train_loader):
     print(f'epoch {i}')
     ## blury image encoder and decoder performance
@@ -157,11 +159,11 @@ for i, (xs, ys) in enumerate(train_loader):
     print(f'PSNR blury sharp reconstruction: {psnr}')
     ssim_i = ssim(rec, rec2).item()
     print(f'SSIM blury sharp reconstruction: {ssim_i}')
-    latent_psnr.append(psnr)
-    latent_ssim.append(ssim_i)
+    rec_psnr.append(psnr)
+    rec_ssim.append(ssim_i)
 
 
 pickle.dump([blury_psnr, blury_ssim,
              sharp_psnr, sharp_ssim,
              og_psnr, og_ssim,
-             latent_psnr, latent_ssim], open('encoder_decoder_metrics.pkl', 'wb'))
+             rec_psnr, rec_ssim], open('encoder_decoder_metrics.pkl', 'wb'))

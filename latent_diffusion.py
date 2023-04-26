@@ -32,7 +32,7 @@ from tqdm import tqdm
 
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
-# os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 if torch.cuda.is_available():
     device = torch.device("cuda")
 else:
@@ -175,6 +175,8 @@ if __name__ == '__main__':
 
             #move to latent space
             ys = torch.unsqueeze(encoder_decoder.encode(ys), dim=1).float()  #shape(B, 1, H/8, W/8)
+            pad_size = (0, 0, 3, 3)  
+            ys = F.pad(ys, pad_size)  #(B, 1, 90, 160) ==> (B, 1, 96, 160)
             
             optimizer.zero_grad()
             t = torch.randint(0, config.diffusion_steps, (ys.shape[0],), device=device).long()
@@ -186,11 +188,11 @@ if __name__ == '__main__':
             epoch_losses.append(loss.item())
 
         if i%20 == 0:
-            torch.save(diffuser.model.state_dict(), os.path.join(folder, f'params/diffusion/basic{i}.pt'))
+            torch.save(diffuser.model.state_dict(), os.path.join(folder, f'params/diffusion/latent_diffusion{i}.pt'))
         
         epoch_loss = round(np.mean(epoch_losses), 3)
         wandb.log({
             'loss': epoch_loss
         })
         print(f'Epoch {i+1} Loss {epoch_loss}')
-    torch.save(diffuser.model.state_dict(), os.path.join(folder, f'params/diffusion/basic_final.pt'))
+    torch.save(diffuser.model.state_dict(), os.path.join(folder, f'params/diffusion/latent_final.pt'))

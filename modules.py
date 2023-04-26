@@ -5,7 +5,7 @@ import torch.nn.functional as F
 from torch.utils.data import Dataset
 import math
 from dall_e import map_pixels, unmap_pixels, load_model
-
+from utils import folder
 
 #Unet
 """reference: https://colab.research.google.com/drive/1sjy9odlSSy0RBVgMTgP7s99NXsqglsUL?usp=sharing"""

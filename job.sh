@@ -4,7 +4,7 @@
 #SBATCH --gpus=1
 #SBATCH --ntasks-per-node=8
 #SBATCH -t 48:00:00
-#SBATCH -J basic_diffusion
+#SBATCH -J con_latent_diffusion
 #SBATCH -A cwr109
 #SBATCH --export=ALL
 
@@ -20,4 +20,6 @@ conda activate dalle2
 cd "/home/zhen1997/diffusion_model"
 wandb online
 # python test_encoder_decoder.py
-python diffusion.py
+# python diffusion.py
+# python latent_diffusion.py
+python con_latent_diffuion.py

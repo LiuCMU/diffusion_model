@@ -120,12 +120,13 @@ class diffusion(nn.Module):
         return out_reshaped
 
 
-    def forward_diffusion(self, x0: torch.Tensor, t: torch.Tensor, device='cpu'):
+    def forward_diffusion(self, x_tilde: torch.Tensor, x0: torch.Tensor, t: torch.Tensor, device='cpu'):
         """
-        x0: a single image of a batch of images
+        x0: a single sharp image of a batch of sharp images
+        x_tilde: the blury image with the same shape as x0
         Takes an image and a timestep as input and returns the noisy version of it at step t
         """
-        noise = torch.randn_like(x0)
+        noise = x0 - x_tilde
         sqrt_alphas_cumprod_t = self.get_step_vals(self.sqrt_alphas_cumprod, t, x0.shape)
         sqrt_one_minus_alphas_cumprod_t = self.get_step_vals(
             self.sqrt_one_minus_alphas_cumpord, t, x0.shape
@@ -142,6 +143,34 @@ class diffusion(nn.Module):
         noise = self.model(x_noisy, t)
         return noise
 
+
+class process_latent(nn.Module):
+    def __init__(self, voc_size=1):
+        """preprocess the image tensor the postprocess the image
+        preprocess: (B,H, W) ==> (B, 1, H, W) ==> pad H ==> scale to (-1, 1)
+        starts from the encoded image from Dall-E
+
+        postprocess is the reverse 
+        """
+        assert(voc_size > 0)
+        self.voc_size = voc_size
+
+    def preprocess(self, xs: torch.Tensor):
+        """shape (B, H, W)"""
+        xs = torch.unsqueeze(xs, dim=1)
+        pad_size = (0, 0, 3, 3)
+        xs = F.pad(xs, pad_size)  #(B, 1, 90, 160) ==> (B, 1, 96, 160)
+        xs = (xs/self.voc_size) * 2 - 1  #rescale xs and ys to be in the range of (-1, 1)
+        return xs
+
+    def postprocess(self, xs: torch.Tensor):
+        """shape (B, 1, H, W)"""
+        xs = ((xs + 1)/2) * self.voc_size
+        xs = xs[:, :, 3:, :]
+        xs = xs[:, :, :-3, :]
+        xs = torch.squeeze(xs, dim=1)
+        return xs
+    
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -162,7 +191,9 @@ if __name__ == '__main__':
     print("Number of training and testing: %i, %i" % (len(train), len(test)))
 
     encoder_decoder = ED(folder, device)
+    processor = process_latent(encoder_decoder.vocab_size)
     diffuser = diffusion(config.diffusion_steps).to(device)
+
     optimizer = torch.optim.Adam(diffuser.model.parameters(), lr=config.lr)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=config.patience, mode="min")
 
@@ -174,13 +205,15 @@ if __name__ == '__main__':
             ys = ys.to(device)  #shape (B, 3, H, W)
 
             #move to latent space
-            ys = torch.unsqueeze(encoder_decoder.encode(ys), dim=1).float()  #shape(B, 1, H/8, W/8)
-            pad_size = (0, 0, 3, 3)  
-            ys = F.pad(ys, pad_size)  #(B, 1, 90, 160) ==> (B, 1, 96, 160)
+            ys = encoder_decoder.encode(ys)
+            ys = processor.preprocess(ys)
+            xs = encoder_decoder.encode(xs)
+            xs = processor.preprocess(xs) 
+            
             
             optimizer.zero_grad()
             t = torch.randint(0, config.diffusion_steps, (ys.shape[0],), device=device).long()
-            y_noisy, noise = diffuser.forward_diffusion(ys, t, device)
+            y_noisy, noise = diffuser.forward_diffusion(xs, ys, t, device)
             noise_pred = diffuser.backward_diffusion(y_noisy, t, device)
             loss = F.l1_loss(noise_pred, noise)
             loss.backward()
@@ -188,7 +221,7 @@ if __name__ == '__main__':
             epoch_losses.append(loss.item())
 
         if i%20 == 0:
-            torch.save(diffuser.model.state_dict(), os.path.join(folder, f'params/diffusion/latent_diffusion{i}.pt'))
+            torch.save(diffuser.model.state_dict(), os.path.join(folder, f'params/diffusion/con_latent_diffusion{i}.pt'))
         
         epoch_loss = round(np.mean(epoch_losses), 3)
         lr = optimizer.param_groups[0]['lr']
@@ -197,4 +230,4 @@ if __name__ == '__main__':
             'lr': lr
         })
         print(f'Epoch {i+1} Loss {epoch_loss}')
-    torch.save(diffuser.model.state_dict(), os.path.join(folder, f'params/diffusion/latent_final.pt'))
+    torch.save(diffuser.model.state_dict(), os.path.join(folder, f'params/diffusion/con_latent_final.pt'))

@@ -109,6 +109,7 @@ class ED(nn.Module):
         self.enc = load_model(os.path.join(folder, 'params/dalle/encoder.pkl'), device)
         self.dec = load_model(os.path.join(folder, 'params/dalle/decoder.pkl'), device)
         self.device = device
+        self.vocab_size = self.enc.vocab_size
     
     @torch.no_grad()
     def encode(self, xs: torch.Tensor):

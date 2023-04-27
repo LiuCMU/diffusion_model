@@ -32,12 +32,12 @@ from tqdm import tqdm
 
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
-# os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 if torch.cuda.is_available():
     device = torch.device("cuda")
 else:
     device = torch.device("cpu")
-device = torch.device("cpu")
+# device = torch.device("cpu")
 
 #parameters
 if "pro" in hostname.lower():  #my mac
@@ -72,7 +72,7 @@ def show_tensor_image(image: torch.Tensor):
         # transforms.Lambda(lambda t: 255 * ((t+1)/2)),  #change element to (0, 255)
         transforms.Lambda(lambda t: 255*t),
         transforms.Lambda(lambda t: t.permute(1, 2, 0)),
-        transforms.Lambda(lambda t: t.numpy().astype(np.uint8)),
+        transforms.Lambda(lambda t: t.cpu().numpy().astype(np.uint8)),
         transforms.ToPILImage()
     ])
     plt.imshow(reverse_transforms(image))
@@ -176,15 +176,16 @@ class process_latent(nn.Module):
 @torch.no_grad()
 def sample_timestep(x: torch.Tensor, t=0):
     """x shape (B, C, H, W, iamge at time step t
+    return the denoised x at the preveious time step
     """
     x = encoder_decoder.encode(x)
     x = processor.preprocess(x)
     # x_tilde = processor.preprocess(encoder_decoder.encode(x_tilde))
 
     t = torch.tensor(t).reshape(-1, ).long().to(device)
-    betas_t = diffuser.get_step_vals(diffuser.betas, t, x.shape)
-    sqrt_one_minus_alphas_cumprod = diffuser.get_step_vals(diffuser.sqrt_one_minus_alphas_cumprod, t, x.shape)
-    sqrt_recip_alphas_t = diffuser.get_step_vals(diffuser.sqrt_recip_alphas, t, x.shape)
+    betas_t = diffuser.get_step_vals(diffuser.betas, t, x.shape).to(device)
+    sqrt_one_minus_alphas_cumprod = diffuser.get_step_vals(diffuser.sqrt_one_minus_alphas_cumprod, t, x.shape).to(device)
+    sqrt_recip_alphas_t = diffuser.get_step_vals(diffuser.sqrt_recip_alphas, t, x.shape).to(device)
 
     noise_t = diffuser.backward_diffusion(x, t)
     x_prev = sqrt_recip_alphas_t * (x - betas_t * noise_t / sqrt_one_minus_alphas_cumprod)
@@ -205,7 +206,6 @@ def sample_plot_image(blur: torch.Tensor, diffusion_steps=300):
     img = blur
 
     for i in tqdm(range(diffusion_steps-1, -1, -1)):
-        # t = torch.tensor(i).long().to(device)
         img = sample_timestep(img, i)
         img = torch.clamp(img, 0, 1)
 
@@ -278,7 +278,7 @@ if __name__ == '__main__':
 
 
     #inference
-    diffuser.model.load_state_dict(torch.load(os.path.join(folder, 'params/diffusion/con_latent_diffusion0.pt'), map_location=device))
+    diffuser.model.load_state_dict(torch.load(os.path.join(folder, 'params/diffusion/con_latent_diffusion80.pt'), map_location=device))
     diffuser.eval()
     with torch.no_grad():
         for xs, ys in test_loader:

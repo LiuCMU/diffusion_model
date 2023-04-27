@@ -113,10 +113,10 @@ class ED(nn.Module):
     
     @torch.no_grad()
     def encode(self, xs: torch.Tensor):
-        """encoder an image tensor, shape(B, C, H, W)"""
+        """encoder an image tensor, shape(B, C, H, W), expect range[0, 1]"""
         z_logits = self.enc(map_pixels(xs).to(self.device))
         z = torch.argmax(z_logits, axis=1)
-        return z  #shape (B, H/8, W/8)
+        return z  #shape (B, H/8, W/8) range[0, self.enc.voc_size-1]
     
     @torch.no_grad()
     def decode(self, zs: torch.Tensor):

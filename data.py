@@ -39,6 +39,6 @@ class img_dataset(Dataset):
             scale = 255  #convert the range between (0, 255)
         else:
             scale = 1
-        x_tensor = scale * self.convertor(Image.open(x))  #(3, 720, 1280)
+        x_tensor = scale * self.convertor(Image.open(x))  #(3, 720, 1280), before scale range(0, 1)
         y_tensor = scale * self.convertor(Image.open(y))  #(3, 720, 1280)
         return (x_tensor, y_tensor)

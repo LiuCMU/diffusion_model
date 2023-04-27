@@ -121,8 +121,8 @@ class ED(nn.Module):
     @torch.no_grad()
     def decode(self, zs: torch.Tensor):
         """encoder an image tensor, shape(B, C, H, W)"""
-        z = torch.clamp(zs.round().int(), 0, self.enc.vocab_size)
-        z = F.one_hot(z, num_classes=self.enc.vocab_size).permute().permute(0, 3, 1, 2).float()
+        z = torch.clamp(zs.round().int(), 0, self.enc.vocab_size-1).to(torch.int64)
+        z = F.one_hot(z, num_classes=self.enc.vocab_size).permute(0, 3, 1, 2).float()
 
         stats = self.dec(z).float()
         rec = unmap_pixels(torch.sigmoid(stats[:, :3]))

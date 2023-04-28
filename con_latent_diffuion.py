@@ -106,6 +106,7 @@ class diffusion(nn.Module):
 
         self.model = Unet(input_channels=1, image_channels=1, down_channels=(64, 128, 256, 512),
                           up_channels = (512, 256, 128, 64), time_emb_dim = 32)
+        self.steps = steps
 
     
     def get_step_vals(self, vals: torch.Tensor, t: torch.Tensor, x_shape: torch.Size):
@@ -122,20 +123,39 @@ class diffusion(nn.Module):
         return out_reshaped
 
 
+    # def forward_diffusion(self, x_tilde: torch.Tensor, x0: torch.Tensor, t: torch.Tensor, device='cpu'):
+    #     """
+    #     x0: a single sharp image of a batch of sharp images
+    #     x_tilde: the blury image with the same shape as x0
+    #     Takes an image and a timestep as input and returns the noisy version of it at step t
+    #     """
+    #     noise = x0 - x_tilde
+    #     sqrt_alphas_cumprod_t = self.get_step_vals(self.sqrt_alphas_cumprod, t, x0.shape)
+    #     sqrt_one_minus_alphas_cumprod_t = self.get_step_vals(
+    #         self.sqrt_one_minus_alphas_cumprod, t, x0.shape
+    #     )
+    #     x_t = sqrt_alphas_cumprod_t.to(device) * x0.to(device) + sqrt_one_minus_alphas_cumprod_t.to(device) * noise.to(device)
+    #     return (x_t, noise)
+
     def forward_diffusion(self, x_tilde: torch.Tensor, x0: torch.Tensor, t: torch.Tensor, device='cpu'):
         """
         x0: a single sharp image of a batch of sharp images
         x_tilde: the blury image with the same shape as x0
         Takes an image and a timestep as input and returns the noisy version of it at step t
         """
-        noise = x0 - x_tilde
-        sqrt_alphas_cumprod_t = self.get_step_vals(self.sqrt_alphas_cumprod, t, x0.shape)
-        sqrt_one_minus_alphas_cumprod_t = self.get_step_vals(
-            self.sqrt_one_minus_alphas_cumprod, t, x0.shape
-        )
-        x_t = sqrt_alphas_cumprod_t.to(device) * x0.to(device) + sqrt_one_minus_alphas_cumprod_t.to(device) * noise.to(device)
-        return (x_t, noise)
-
+        # noise = -(x0 - x_tilde)
+        # noise_t = noise * (1 - t.to(device)/(1000 * (self.steps - 1)))
+        # x_t = noise_t + x_tilde
+        # sqrt_alphas_cumprod_t = self.get_step_vals(self.sqrt_alphas_cumprod, t, x0.shape)
+        # sqrt_one_minus_alphas_cumprod_t = self.get_step_vals(
+        #     self.sqrt_one_minus_alphas_cumprod, t, x0.shape
+        # )
+        # x_t = sqrt_alphas_cumprod_t.to(device) * x0.to(device) + sqrt_one_minus_alphas_cumprod_t.to(device) * noise.to(device)
+        noise = x_tilde - x0
+        noise_t = noise * (t.to(device)/(self.steps-1))
+        x_t = x0 + noise_t
+        return (x_t, noise_t)
+    
     
     def backward_diffusion(self, x_noisy: torch.Tensor, t: torch.Tensor, device='cpu'):
         """
@@ -270,7 +290,7 @@ if __name__ == '__main__':
     parser.add_argument("--patience", type=int, default=10)
     parser.add_argument("--epochs", type=int, default=100)
     parser.add_argument("--batch_size", type=int, default=2)
-    parser.add_argument("--diffusion_steps", type=int, default=30)
+    parser.add_argument("--diffusion_steps", type=int, default=3000000)
     args = parser.parse_args()
     wandb.init(project="diffusion", entity="liu97", config=args)
     config = wandb.config
@@ -348,6 +368,8 @@ if __name__ == '__main__':
                 noisy_img, noise = diffuser.forward_diffusion(image_tilde, image, t, device)
                 noisy_images.append(noisy_img)
             # noisy_iamges = [image_tilde]
+
+            noisy_images.append(image_tilde)
             
 
             #move back to pixel space

@@ -211,12 +211,58 @@ def sample_plot_image(blur: torch.Tensor, diffusion_steps=300):
         img = torch.clamp(img, -1, 1)
 
         if i%stepsize == 0:
-            img_og = encoder_decoder.decode(processor.postprocess(img))  #image in the pixel sapce, range[0, 255]
+            img_og = encoder_decoder.decode(processor.postprocess(img))
             plt.subplot(1, num_images, int(i/stepsize)+1)
             show_tensor_image(img_og[0])
             # break
     plt.savefig('test_cld.png')
 
+
+def visualize_tensor(tensor):
+    # Convert PyTorch tensor to numpy array
+    if isinstance(tensor, torch.Tensor):
+        tensor = tensor.detach().numpy()
+    
+    # Check if the tensor has the required shape
+    if len(tensor.shape) != 4:
+        raise ValueError("Tensor should have 4 dimensions (B, C, H, W)")
+
+    # Ensure the tensor has either 1 (grayscale) or 3 (RGB) channels
+    if tensor.shape[1] not in [1, 3]:
+        raise ValueError("Only 1 (grayscale) or 3 (RGB) channels are supported")
+
+    # Move the channel axis to the end for easier handling
+    tensor = np.moveaxis(tensor, 1, -1)
+
+    # Create a grid of images
+    B = tensor.shape[0]
+    ncols = int(np.ceil(np.sqrt(B)))
+    nrows = int(np.ceil(B / ncols))
+
+    fig, axes = plt.subplots(nrows, ncols, figsize=(ncols * 2, nrows * 2))
+    axes = axes.flatten()
+
+    for i in range(B):
+        img = tensor[i]
+
+        # Normalize the image to [0, 1] range for better visualization
+        img = (img - img.min()) / (img.max() - img.min())
+
+        # If the image is grayscale, convert it to an RGB image
+        if img.shape[-1] == 1:
+            img = np.repeat(img, 3, axis=-1)
+
+        axes[i].imshow(img)
+        axes[i].set_xticks([])
+        axes[i].set_yticks([])
+        axes[i].set_title(f'Image {i + 1}')
+
+    # Hide the axes for empty plots
+    for i in range(B, nrows * ncols):
+        axes[i].axis('off')
+
+    plt.show()
+    plt.savefig('noisy_images.png')
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -244,10 +290,46 @@ if __name__ == '__main__':
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=config.patience, mode="min")
 
 
-    for i in tqdm(range(config.epochs)):
-        print(f'epoch {i}')
-        epoch_losses = []
-        for xs, ys in train_loader:
+    # for i in tqdm(range(config.epochs)):
+    #     print(f'epoch {i}')
+    #     epoch_losses = []
+    #     for xs, ys in train_loader:
+    #         xs = xs.to(device)
+    #         ys = ys.to(device)  #shape (B, 3, H, W), range[0, 1]
+
+    #         #move to latent space
+    #         ys = encoder_decoder.encode(ys)  #shape(B, 90, 160), range[0, encoder.voc_size-1]
+    #         ys = processor.preprocess(ys)  #shape(B, 1, 96, 160), range[-1, 1]
+    #         xs = encoder_decoder.encode(xs)
+    #         xs = processor.preprocess(xs) 
+            
+            
+    #         optimizer.zero_grad()
+    #         t = torch.randint(0, config.diffusion_steps, (ys.shape[0],), device=device).long()
+    #         y_noisy, noise = diffuser.forward_diffusion(xs, ys, t, device)
+    #         noise_pred = diffuser.backward_diffusion(y_noisy, t, device)
+    #         loss = F.l1_loss(noise_pred, noise)
+    #         loss.backward()
+    #         optimizer.step()
+    #         epoch_losses.append(loss.item())
+
+    #     if i%20 == 0:
+    #         torch.save(diffuser.model.state_dict(), os.path.join(folder, f'params/diffusion/con_latent_diffusion{i}.pt'))
+        
+    #     epoch_loss = round(np.mean(epoch_losses), 3)
+    #     lr = optimizer.param_groups[0]['lr']
+    #     wandb.log({
+    #         'loss': epoch_loss,
+    #         'lr': lr
+    #     })
+    #     print(f'Epoch {i+1} Loss {epoch_loss}')
+    # torch.save(diffuser.model.state_dict(), os.path.join(folder, f'params/diffusion/con_latent_final.pt'))
+
+    ##check forward noisy images
+    num_images = 10
+    stepsize = int(config.diffusion_steps/num_images)
+    with torch.no_grad():
+        for xs, ys in test_loader:
             xs = xs.to(device)
             ys = ys.to(device)  #shape (B, 3, H, W), range[0, 1]
 
@@ -256,33 +338,33 @@ if __name__ == '__main__':
             ys = processor.preprocess(ys)  #shape(B, 1, 96, 160), range[-1, 1]
             xs = encoder_decoder.encode(xs)
             xs = processor.preprocess(xs) 
-            
-            
-            optimizer.zero_grad()
-            t = torch.randint(0, config.diffusion_steps, (ys.shape[0],), device=device).long()
-            y_noisy, noise = diffuser.forward_diffusion(xs, ys, t, device)
-            noise_pred = diffuser.backward_diffusion(y_noisy, t, device)
-            loss = F.l1_loss(noise_pred, noise)
-            loss.backward()
-            optimizer.step()
-            epoch_losses.append(loss.item())
+            image_tilde = torch.unsqueeze(xs[0], dim=0)
+            image = torch.unsqueeze(ys[0], dim=0)
 
-        if i%20 == 0:
-            torch.save(diffuser.model.state_dict(), os.path.join(folder, f'params/diffusion/con_latent_diffusion{i}.pt'))
-        
-        epoch_loss = round(np.mean(epoch_losses), 3)
-        lr = optimizer.param_groups[0]['lr']
-        wandb.log({
-            'loss': epoch_loss,
-            'lr': lr
-        })
-        print(f'Epoch {i+1} Loss {epoch_loss}')
-    torch.save(diffuser.model.state_dict(), os.path.join(folder, f'params/diffusion/con_latent_final.pt'))
+            noisy_images = []
+            for idx in range(0, config.diffusion_steps, stepsize):
+                t = torch.Tensor([idx]).type(torch.int64)
+                # plt.subplot(1, num_images+1, int(idx/stepsize) + 1)
+                noisy_img, noise = diffuser.forward_diffusion(image_tilde, image, t, device)
+                noisy_images.append(noisy_img)
+            # noisy_iamges = [image_tilde]
+            
 
+            #move back to pixel space
+            noisy_images_ = []
+            for image in noisy_images:
+                image_ = processor.postprocess(image)
+                # print(image_.shape)
+                image_ = encoder_decoder.decode(image_).detach().cpu()
+                noisy_images_.append(image_)
+            noisy_images = torch.concat(noisy_images_, dim=0)
+
+            visualize_tensor(noisy_images)
+            break
 
     #inference
-    # diffuser.model.load_state_dict(torch.load(os.path.join(folder, 'params/diffusion/con_latent_diffusion80.pt'), map_location=device))
-    # diffuser.eval()
+    # diffuser.model.load_state_dict(torch.load(os.path.join(folder, 'params/diffusion/con_latent_final.pt'), map_location=device))
+    # diffuser.model.eval()
     # with torch.no_grad():
     #     for xs, ys in test_loader:
     #         xs = xs.to(device)  #shape (B, 3, H, W), range[0, 1]

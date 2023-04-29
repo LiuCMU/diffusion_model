@@ -32,7 +32,7 @@ from tqdm import tqdm
 
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
-os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+# os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 if torch.cuda.is_available():
     device = torch.device("cuda")
 else:
@@ -123,30 +123,30 @@ class diffusion(nn.Module):
         return out_reshaped
 
 
-    def forward_diffusion(self, x_tilde: torch.Tensor, x0: torch.Tensor, t: torch.Tensor, device='cpu'):
-        """
-        x0: a single sharp image of a batch of sharp images
-        x_tilde: the blury image with the same shape as x0
-        Takes an image and a timestep as input and returns the noisy version of it at step t
-        """
-        noise = -(x0 - x_tilde)
-        sqrt_alphas_cumprod_t = self.get_step_vals(self.sqrt_alphas_cumprod, t, x0.shape)
-        sqrt_one_minus_alphas_cumprod_t = self.get_step_vals(
-            self.sqrt_one_minus_alphas_cumprod, t, x0.shape
-        )
-        x_t = sqrt_alphas_cumprod_t.to(device) * x0.to(device) + sqrt_one_minus_alphas_cumprod_t.to(device) * noise.to(device)
-        return (x_t, noise)
-
     # def forward_diffusion(self, x_tilde: torch.Tensor, x0: torch.Tensor, t: torch.Tensor, device='cpu'):
     #     """
     #     x0: a single sharp image of a batch of sharp images
     #     x_tilde: the blury image with the same shape as x0
     #     Takes an image and a timestep as input and returns the noisy version of it at step t
     #     """
-    #     noise = x_tilde - x0
-    #     noise_t = noise * (t.to(device)/(self.steps-1))
-    #     x_t = x0 + noise_t
-    #     return (x_t, noise_t)
+    #     noise = -(x0 - x_tilde)
+    #     sqrt_alphas_cumprod_t = self.get_step_vals(self.sqrt_alphas_cumprod, t, x0.shape)
+    #     sqrt_one_minus_alphas_cumprod_t = self.get_step_vals(
+    #         self.sqrt_one_minus_alphas_cumprod, t, x0.shape
+    #     )
+    #     x_t = sqrt_alphas_cumprod_t.to(device) * x0.to(device) + sqrt_one_minus_alphas_cumprod_t.to(device) * noise.to(device)
+    #     return (x_t, noise)
+
+    def forward_diffusion(self, x_tilde: torch.Tensor, x0: torch.Tensor, t: torch.Tensor, device='cpu'):
+        """
+        x0: a single sharp image of a batch of sharp images
+        x_tilde: the blury image with the same shape as x0
+        Takes an image and a timestep as input and returns the noisy version of it at step t
+        """
+        noise = x_tilde - x0
+        noise_t = noise * (t.to(device)/(self.steps-1)).reshape(-1, 1, 1, 1)
+        x_t = x0 + noise_t
+        return (x_t, noise_t)
     
     
     def backward_diffusion(self, x_noisy: torch.Tensor, t: torch.Tensor, device='cpu'):
@@ -281,7 +281,7 @@ if __name__ == '__main__':
     parser.add_argument("--lr", type=float, default=0.001)
     parser.add_argument("--patience", type=int, default=10)
     parser.add_argument("--epochs", type=int, default=100)
-    parser.add_argument("--batch_size", type=int, default=2)
+    parser.add_argument("--batch_size", type=int, default=4)
     parser.add_argument("--diffusion_steps", type=int, default=30)
     args = parser.parse_args()
     wandb.init(project="diffusion", entity="liu97", config=args)
@@ -289,7 +289,7 @@ if __name__ == '__main__':
 
     #load datasets
     train = img_dataset(train_path, debug=False, scale=False) # debug = False
-    train_loader = DataLoader(train, config.batch_size, num_workers=4)
+    train_loader = DataLoader(train, config.batch_size, num_workers=4, shuffle=True)
     test = img_dataset(test_path, debug=False, scale=False) # debug = False
     test_loader = DataLoader(test, config.batch_size, num_workers=4)
     print("Number of training and testing: %i, %i" % (len(train), len(test)))
@@ -318,8 +318,8 @@ if __name__ == '__main__':
             optimizer.step()
             epoch_losses.append(loss.item())
 
-        if i%20 == 0:
-            torch.save(diffuser.model.state_dict(), os.path.join(folder, f'params/diffusion/con_pix_diffusion{i}.pt'))
+        if i%10 == 0:
+            torch.save(diffuser.model.state_dict(), os.path.join(folder, f'params/diffusion/con_pix_diffusion_lin{i}.pt'))
         
         epoch_loss = round(np.mean(epoch_losses), 3)
         lr = optimizer.param_groups[0]['lr']
@@ -328,7 +328,7 @@ if __name__ == '__main__':
             'lr': lr
         })
         print(f'Epoch {i+1} Loss {epoch_loss}')
-    torch.save(diffuser.model.state_dict(), os.path.join(folder, f'params/diffusion/con_pix_final.pt'))
+    torch.save(diffuser.model.state_dict(), os.path.join(folder, f'params/diffusion/con_pix_lin_final.pt'))
 
     ##check forward noisy images
     # num_images = 10

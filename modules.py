@@ -55,8 +55,8 @@ class SinusoidalPositionEmbeddings(nn.Module):
 
 
 class Unet(nn.Module):
-    def __init__(self, input_channels=1, image_channels=3, down_channels=(64, 128, 256, 512, 1024),
-                 up_channels = (1024, 512, 256, 128, 64), time_emb_dim = 32):
+    def __init__(self, input_channels=3, image_channels=3, down_channels=(64, 128, 256, 512),
+                 up_channels = (512, 256, 128, 64), time_emb_dim = 32):
         super(Unet, self).__init__()
 
         # Time embedding
@@ -112,11 +112,11 @@ class ED(nn.Module):
     
     @torch.no_grad()
     def encode(self, xs: torch.Tensor):
-        """encoder an image tensor, shape(B, C, H, W)"""
+        """encoder an image tensor, shape(B, C, H, W), expect range[0, 1]"""
         z_logits = self.enc(map_pixels(xs).to(self.device))
         z = torch.argmax(z_logits, axis=1)
         return z  #shape (B, H/8, W/8)
-
+    
     @torch.no_grad()
     def decode(self, zs: torch.Tensor):
         """encoder an image tensor, shape(B, C, H, W)"""

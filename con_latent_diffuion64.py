@@ -32,7 +32,7 @@ from tqdm import tqdm
 
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
-os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+# os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 if torch.cuda.is_available():
     device = torch.device("cuda")
 else:
@@ -104,8 +104,8 @@ class diffusion(nn.Module):
         self.sqrt_one_minus_alphas_cumprod = torch.sqrt(1 - self.alphas_cumprod)
         self.posterior_variance = self.betas * (1 - self.alphas_cumprod_prev) / (1 - self.alphas_cumprod)
 
-        self.model = Unet(input_channels=3, image_channels=3, down_channels=(64, 128, 256),
-                          up_channels = (256, 128, 64), time_emb_dim = 32)
+        self.model = Unet(input_channels=3, image_channels=3, down_channels=(64, 64, 64),
+                          up_channels = (64, 64, 64), time_emb_dim = 32)
         self.steps = steps
 
     
@@ -281,7 +281,7 @@ if __name__ == '__main__':
     parser.add_argument("--lr", type=float, default=0.001)
     parser.add_argument("--patience", type=int, default=10)
     parser.add_argument("--epochs", type=int, default=100)
-    parser.add_argument("--batch_size", type=int, default=2)
+    parser.add_argument("--batch_size", type=int, default=4)
     parser.add_argument("--diffusion_steps", type=int, default=30)
     args = parser.parse_args()
     wandb.init(project="diffusion", entity="liu97", config=args)
@@ -318,8 +318,8 @@ if __name__ == '__main__':
             optimizer.step()
             epoch_losses.append(loss.item())
 
-        if i%20 == 0:
-            torch.save(diffuser.model.state_dict(), os.path.join(folder, f'params/diffusion/con_pix_diffusion{i}.pt'))
+        if i%10 == 0:
+            torch.save(diffuser.model.state_dict(), os.path.join(folder, f'params/diffusion/con_pix64_diffusion{i}.pt'))
         
         epoch_loss = round(np.mean(epoch_losses), 3)
         lr = optimizer.param_groups[0]['lr']
@@ -328,7 +328,7 @@ if __name__ == '__main__':
             'lr': lr
         })
         print(f'Epoch {i+1} Loss {epoch_loss}')
-    torch.save(diffuser.model.state_dict(), os.path.join(folder, f'params/diffusion/con_pix_final.pt'))
+    torch.save(diffuser.model.state_dict(), os.path.join(folder, f'params/diffusion/con_pix64_final.pt'))
 
     ##check forward noisy images
     # num_images = 10

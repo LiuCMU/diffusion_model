@@ -32,7 +32,7 @@ from tqdm import tqdm
 
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
-os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 if torch.cuda.is_available():
     device = torch.device("cuda")
 else:
@@ -216,16 +216,18 @@ def sample_plot_image(blur: torch.Tensor, diffusion_steps=300):
     plt.axis('off')
     num_images = 10
     stepsize = diffusion_steps/num_images
-    img = processor.preprocess(encoder_decoder.encode(blur))
+    # img = processor.preprocess(encoder_decoder.encode(blur))
+    img = blur
 
     for i in tqdm(range(diffusion_steps-1, -1, -1)):
         img = sample_timestep(img, i)  
-        img = torch.clamp(img, -1, 1)
+        # img = torch.clamp(img, -1, 1)
 
         if i%stepsize == 0:
-            img_og = encoder_decoder.decode(processor.postprocess(img))
+            # img_og = encoder_decoder.decode(processor.postprocess(img))
             plt.subplot(1, num_images, int(i/stepsize)+1)
-            show_tensor_image(img_og[0])
+            # show_tensor_image(img_og[0])
+            show_tensor_image(img[0])
             # break
     plt.savefig('test_cld.png')
 
@@ -281,7 +283,7 @@ if __name__ == '__main__':
     parser.add_argument("--lr", type=float, default=0.001)
     parser.add_argument("--patience", type=int, default=10)
     parser.add_argument("--epochs", type=int, default=100)
-    parser.add_argument("--batch_size", type=int, default=2)
+    parser.add_argument("--batch_size", type=int, default=1)
     parser.add_argument("--diffusion_steps", type=int, default=30)
     args = parser.parse_args()
     wandb.init(project="diffusion", entity="liu97", config=args)
@@ -302,33 +304,33 @@ if __name__ == '__main__':
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=config.patience, mode="min")
 
     ##train
-    for i in tqdm(range(config.epochs)):
-        print(f'epoch {i}')
-        epoch_losses = []
-        for xs, ys in train_loader:
-            xs = xs.to(device)
-            ys = ys.to(device)  #shape (B, 3, H, W), range[0, 1]
+    # for i in tqdm(range(config.epochs)):
+    #     print(f'epoch {i}')
+    #     epoch_losses = []
+    #     for xs, ys in train_loader:
+    #         xs = xs.to(device)
+    #         ys = ys.to(device)  #shape (B, 3, H, W), range[0, 1]
             
-            optimizer.zero_grad()
-            t = torch.randint(0, config.diffusion_steps, (ys.shape[0],), device=device).long()
-            y_noisy, noise = diffuser.forward_diffusion(xs, ys, t, device)
-            noise_pred = diffuser.backward_diffusion(y_noisy, t, device)
-            loss = F.l1_loss(noise_pred, noise)
-            loss.backward()
-            optimizer.step()
-            epoch_losses.append(loss.item())
+    #         optimizer.zero_grad()
+    #         t = torch.randint(0, config.diffusion_steps, (ys.shape[0],), device=device).long()
+    #         y_noisy, noise = diffuser.forward_diffusion(xs, ys, t, device)
+    #         noise_pred = diffuser.backward_diffusion(y_noisy, t, device)
+    #         loss = F.l1_loss(noise_pred, noise)
+    #         loss.backward()
+    #         optimizer.step()
+    #         epoch_losses.append(loss.item())
 
-        if i%20 == 0:
-            torch.save(diffuser.model.state_dict(), os.path.join(folder, f'params/diffusion/con_pix_diffusion{i}.pt'))
+    #     if i%20 == 0:
+    #         torch.save(diffuser.model.state_dict(), os.path.join(folder, f'params/diffusion/con_pix_diffusion{i}.pt'))
         
-        epoch_loss = round(np.mean(epoch_losses), 3)
-        lr = optimizer.param_groups[0]['lr']
-        wandb.log({
-            'loss': epoch_loss,
-            'lr': lr
-        })
-        print(f'Epoch {i+1} Loss {epoch_loss}')
-    torch.save(diffuser.model.state_dict(), os.path.join(folder, f'params/diffusion/con_pix_final.pt'))
+    #     epoch_loss = round(np.mean(epoch_losses), 3)
+    #     lr = optimizer.param_groups[0]['lr']
+    #     wandb.log({
+    #         'loss': epoch_loss,
+    #         'lr': lr
+    #     })
+    #     print(f'Epoch {i+1} Loss {epoch_loss}')
+    # torch.save(diffuser.model.state_dict(), os.path.join(folder, f'params/diffusion/con_pix_final.pt'))
 
     ##check forward noisy images
     # num_images = 10
@@ -351,11 +353,11 @@ if __name__ == '__main__':
     #         break
 
     #inference
-    # diffuser.model.load_state_dict(torch.load(os.path.join(folder, 'params/diffusion/con_latent_final.pt'), map_location=device))
-    # diffuser.model.eval()
-    # with torch.no_grad():
-    #     for xs, ys in test_loader:
-    #         xs = xs.to(device)  #shape (B, 3, H, W), range[0, 1]
-    #         ys = ys.to(device)
-    #         sample_plot_image(xs, diffusion_steps=config.diffusion_steps)
-    #         break
+    diffuser.model.load_state_dict(torch.load(os.path.join(folder, 'params/diffusion/con_pix_diffusion0.pt'), map_location=device))
+    diffuser.model.eval()
+    with torch.no_grad():
+        for xs, ys in test_loader:
+            xs = xs.to(device)  #shape (B, 3, H, W), range[0, 1]
+            ys = ys.to(device)
+            sample_plot_image(xs, diffusion_steps=config.diffusion_steps)
+            break

@@ -7,12 +7,13 @@ from torch.utils.data import Dataset
 
 
 class img_dataset(Dataset):
-    def __init__(self, path, debug=False, scale=True):
+    def __init__(self, path, debug=False, scale=True, fname=False):
         super(img_dataset, self).__init__()
         """
         path: a folder containing blurred/x and sharp/y folders
         """
         self.path = path
+        self.fname = fname
 
         #collect data points
         data = []
@@ -41,4 +42,7 @@ class img_dataset(Dataset):
             scale = 1
         x_tensor = scale * self.convertor(Image.open(x))  #(3, 720, 1280)
         y_tensor = scale * self.convertor(Image.open(y))  #(3, 720, 1280)
-        return (x_tensor, y_tensor)
+        if self.fname:
+            return (x_tensor, y_tensor, x[-25:], y[-25:])
+        else:
+            return (x_tensor, y_tensor)

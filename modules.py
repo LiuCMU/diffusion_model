@@ -5,7 +5,6 @@ import torch.nn.functional as F
 from torch.utils.data import Dataset
 import math
 from dall_e import map_pixels, unmap_pixels, load_model
-from utils import folder
 
 #Unet
 """reference: https://colab.research.google.com/drive/1sjy9odlSSy0RBVgMTgP7s99NXsqglsUL?usp=sharing"""
@@ -117,7 +116,7 @@ class ED(nn.Module):
         z_logits = self.enc(map_pixels(xs).to(self.device))
         z = torch.argmax(z_logits, axis=1)
         return z  #shape (B, H/8, W/8)
-    
+
     @torch.no_grad()
     def decode(self, zs: torch.Tensor):
         """encoder an image tensor, shape(B, C, H, W)"""

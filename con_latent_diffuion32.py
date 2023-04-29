@@ -32,7 +32,7 @@ from tqdm import tqdm
 
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
-# os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 if torch.cuda.is_available():
     device = torch.device("cuda")
 else:
@@ -281,7 +281,7 @@ if __name__ == '__main__':
     parser.add_argument("--lr", type=float, default=0.001)
     parser.add_argument("--patience", type=int, default=10)
     parser.add_argument("--epochs", type=int, default=100)
-    parser.add_argument("--batch_size", type=int, default=4)
+    parser.add_argument("--batch_size", type=int, default=1)
     parser.add_argument("--diffusion_steps", type=int, default=30)
     args = parser.parse_args()
     wandb.init(project="diffusion", entity="liu97", config=args)
@@ -297,6 +297,9 @@ if __name__ == '__main__':
     encoder_decoder = ED(folder, device)
     processor = process_latent(encoder_decoder.vocab_size)
     diffuser = diffusion(config.diffusion_steps).to(device)
+    
+    num_params = sum(p.numel() for p in diffuser.parameters() if p.requires_grad)
+    print('number of trainable parameters: ', num_params)
 
     optimizer = torch.optim.Adam(diffuser.model.parameters(), lr=config.lr)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=config.patience, mode="min")
@@ -351,7 +354,7 @@ if __name__ == '__main__':
     #         break
 
     #inference
-    # diffuser.model.load_state_dict(torch.load(os.path.join(folder, 'params/diffusion/con_latent_final.pt'), map_location=device))
+    # diffuser.model.load_state_dict(torch.load(os.path.join(folder, 'params/diffusion/con_pix32_final.pt'), map_location=device))
     # diffuser.model.eval()
     # with torch.no_grad():
     #     for xs, ys in test_loader:

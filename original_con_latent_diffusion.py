@@ -104,9 +104,8 @@ class diffusion(nn.Module):
         self.sqrt_one_minus_alphas_cumprod = torch.sqrt(1 - self.alphas_cumprod)
         self.posterior_variance = self.betas * (1 - self.alphas_cumprod_prev) / (1 - self.alphas_cumprod)
 
-        self.model = Unet(input_channels=3, image_channels=3, down_channels=(64, 64, 64),
-                          up_channels = (64, 64, 64), time_emb_dim = 32)
-        self.steps = steps
+        self.model = Unet(input_channels=1, image_channels=1, down_channels=(64, 128, 256, 512),
+                          up_channels = (512, 256, 128, 64), time_emb_dim = 32)
 
     
     def get_step_vals(self, vals: torch.Tensor, t: torch.Tensor, x_shape: torch.Size):
@@ -129,7 +128,7 @@ class diffusion(nn.Module):
         x_tilde: the blury image with the same shape as x0
         Takes an image and a timestep as input and returns the noisy version of it at step t
         """
-        noise = -(x0 - x_tilde)
+        noise = x0 - x_tilde
         sqrt_alphas_cumprod_t = self.get_step_vals(self.sqrt_alphas_cumprod, t, x0.shape)
         sqrt_one_minus_alphas_cumprod_t = self.get_step_vals(
             self.sqrt_one_minus_alphas_cumprod, t, x0.shape
@@ -137,17 +136,6 @@ class diffusion(nn.Module):
         x_t = sqrt_alphas_cumprod_t.to(device) * x0.to(device) + sqrt_one_minus_alphas_cumprod_t.to(device) * noise.to(device)
         return (x_t, noise)
 
-    # def forward_diffusion(self, x_tilde: torch.Tensor, x0: torch.Tensor, t: torch.Tensor, device='cpu'):
-    #     """
-    #     x0: a single sharp image of a batch of sharp images
-    #     x_tilde: the blury image with the same shape as x0
-    #     Takes an image and a timestep as input and returns the noisy version of it at step t
-    #     """
-    #     noise = x_tilde - x0
-    #     noise_t = noise * (t.to(device)/(self.steps-1))
-    #     x_t = x0 + noise_t
-    #     return (x_t, noise_t)
-    
     
     def backward_diffusion(self, x_noisy: torch.Tensor, t: torch.Tensor, device='cpu'):
         """
@@ -223,72 +211,26 @@ def sample_plot_image(blur: torch.Tensor, diffusion_steps=300):
         img = torch.clamp(img, -1, 1)
 
         if i%stepsize == 0:
-            img_og = encoder_decoder.decode(processor.postprocess(img))
+            img_og = encoder_decoder.decode(processor.postprocess(img))  #image in the pixel sapce, range[0, 255]
             plt.subplot(1, num_images, int(i/stepsize)+1)
             show_tensor_image(img_og[0])
             # break
     plt.savefig('test_cld.png')
 
 
-def visualize_tensor(tensor):
-    # Convert PyTorch tensor to numpy array
-    if isinstance(tensor, torch.Tensor):
-        tensor = tensor.cpu().detach().numpy()
-    
-    # Check if the tensor has the required shape
-    if len(tensor.shape) != 4:
-        raise ValueError("Tensor should have 4 dimensions (B, C, H, W)")
-
-    # Ensure the tensor has either 1 (grayscale) or 3 (RGB) channels
-    if tensor.shape[1] not in [1, 3]:
-        raise ValueError("Only 1 (grayscale) or 3 (RGB) channels are supported")
-
-    # Move the channel axis to the end for easier handling
-    tensor = np.moveaxis(tensor, 1, -1)
-
-    # Create a grid of images
-    B = tensor.shape[0]
-    ncols = int(np.ceil(np.sqrt(B)))
-    nrows = int(np.ceil(B / ncols))
-
-    fig, axes = plt.subplots(nrows, ncols, figsize=(ncols * 2, nrows * 2))
-    axes = axes.flatten()
-
-    for i in range(B):
-        img = tensor[i]
-
-        # Normalize the image to [0, 1] range for better visualization
-        img = (img - img.min()) / (img.max() - img.min())
-
-        # If the image is grayscale, convert it to an RGB image
-        if img.shape[-1] == 1:
-            img = np.repeat(img, 3, axis=-1)
-
-        axes[i].imshow(img)
-        axes[i].set_xticks([])
-        axes[i].set_yticks([])
-        axes[i].set_title(f'Image {i + 1}')
-
-    # Hide the axes for empty plots
-    for i in range(B, nrows * ncols):
-        axes[i].axis('off')
-
-    plt.show()
-    plt.savefig('noisy_images.png')
-
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--lr", type=float, default=0.001)
     parser.add_argument("--patience", type=int, default=10)
     parser.add_argument("--epochs", type=int, default=100)
-    parser.add_argument("--batch_size", type=int, default=1)
+    parser.add_argument("--batch_size", type=int, default=2)
     parser.add_argument("--diffusion_steps", type=int, default=30)
     args = parser.parse_args()
     wandb.init(project="diffusion", entity="liu97", config=args)
     config = wandb.config
 
     #load datasets
-    train = img_dataset(train_path, debug=False, scale=False) # debug = False
+    train = img_dataset(train_path, debug=True, scale=False) # debug = False
     train_loader = DataLoader(train, config.batch_size, num_workers=4)
     test = img_dataset(test_path, debug=False, scale=False) # debug = False
     test_loader = DataLoader(test, config.batch_size, num_workers=4)
@@ -298,67 +240,49 @@ if __name__ == '__main__':
     processor = process_latent(encoder_decoder.vocab_size)
     diffuser = diffusion(config.diffusion_steps).to(device)
 
-    num_params = sum(p.numel() for p in diffuser.parameters() if p.requires_grad)
-    print('number of trainable parameters: ', num_params)
-
     optimizer = torch.optim.Adam(diffuser.model.parameters(), lr=config.lr)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=config.patience, mode="min")
 
-    ##train
-    for i in tqdm(range(config.epochs)):
-        print(f'epoch {i}')
-        epoch_losses = []
-        for xs, ys in train_loader:
-            xs = xs.to(device)
-            ys = ys.to(device)  #shape (B, 3, H, W), range[0, 1]
-            
-            optimizer.zero_grad()
-            t = torch.randint(0, config.diffusion_steps, (ys.shape[0],), device=device).long()
-            y_noisy, noise = diffuser.forward_diffusion(xs, ys, t, device)
-            noise_pred = diffuser.backward_diffusion(y_noisy, t, device)
-            loss = F.l1_loss(noise_pred, noise)
-            loss.backward()
-            optimizer.step()
-            epoch_losses.append(loss.item())
 
-        if i%10 == 0:
-            torch.save(diffuser.model.state_dict(), os.path.join(folder, f'params/diffusion/con_pix64_diffusion{i}.pt'))
-        
-        epoch_loss = round(np.mean(epoch_losses), 3)
-        lr = optimizer.param_groups[0]['lr']
-        wandb.log({
-            'loss': epoch_loss,
-            'lr': lr
-        })
-        print(f'Epoch {i+1} Loss {epoch_loss}')
-    torch.save(diffuser.model.state_dict(), os.path.join(folder, f'params/diffusion/con_pix64_final.pt'))
-
-    ##check forward noisy images
-    # num_images = 10
-    # stepsize = int(config.diffusion_steps/num_images)
-    # with torch.no_grad():
-    #     for xs, ys in test_loader:
+    # for i in tqdm(range(config.epochs)):
+    #     print(f'epoch {i}')
+    #     epoch_losses = []
+    #     for xs, ys in train_loader:
     #         xs = xs.to(device)
     #         ys = ys.to(device)  #shape (B, 3, H, W), range[0, 1]
-    #         image_tilde = torch.unsqueeze(xs[0], dim=0)
-    #         image = torch.unsqueeze(ys[0], dim=0)
-            
-    #         noisy_images = []
-    #         for idx in range(0, config.diffusion_steps, stepsize):
-    #             t = torch.Tensor([idx]).type(torch.int64)
-    #             noisy_img, noise = diffuser.forward_diffusion(image_tilde, image, t, device)
-    #             noisy_images.append(noisy_img)
 
-    #         noisy_images = torch.concat(noisy_images, dim=0)
-    #         visualize_tensor(noisy_images)
-    #         break
+    #         #move to latent space
+    #         ys = encoder_decoder.encode(ys)  #shape(B, 90, 160), range[0, encoder.voc_size-1]
+    #         ys = processor.preprocess(ys)  #shape(B, 1, 96, 160), range[-1, 1]
+    #         xs = encoder_decoder.encode(xs)
+    #         xs = processor.preprocess(xs) 
+            
+            
+    #         optimizer.zero_grad()
+    #         t = torch.randint(0, config.diffusion_steps, (ys.shape[0],), device=device).long()
+    #         y_noisy, noise = diffuser.forward_diffusion(xs, ys, t, device)
+    #         noise_pred = diffuser.backward_diffusion(y_noisy, t, device)
+    #         loss = F.l1_loss(noise_pred, noise)
+    #         loss.backward()
+    #         optimizer.step()
+    #         epoch_losses.append(loss.item())
+
+    #     if i%20 == 0:
+    #         torch.save(diffuser.model.state_dict(), os.path.join(folder, f'params/diffusion/con_latent_diffusion{i}.pt'))
+        
+    #     epoch_loss = round(np.mean(epoch_losses), 3)
+    #     lr = optimizer.param_groups[0]['lr']
+    #     wandb.log({
+    #         'loss': epoch_loss,
+    #         'lr': lr
+    #     })
+    #     print(f'Epoch {i+1} Loss {epoch_loss}')
+    # torch.save(diffuser.model.state_dict(), os.path.join(folder, f'params/diffusion/con_latent_final.pt'))
+
 
     #inference
     # diffuser.model.load_state_dict(torch.load(os.path.join(folder, 'params/diffusion/con_latent_final.pt'), map_location=device))
     # diffuser.model.eval()
-    # with torch.no_grad():
-    #     for xs, ys in test_loader:
-    #         xs = xs.to(device)  #shape (B, 3, H, W), range[0, 1]
-    #         ys = ys.to(device)
-    #         sample_plot_image(xs, diffusion_steps=config.diffusion_steps)
-    #         break
+
+    # num_params = sum(p.numel() for p in diffuser.parameters() if p.requires_grad)
+    # print('number of trainable parameters: ', num_params)

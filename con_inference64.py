@@ -104,8 +104,8 @@ class diffusion(nn.Module):
         self.sqrt_one_minus_alphas_cumprod = torch.sqrt(1 - self.alphas_cumprod)
         self.posterior_variance = self.betas * (1 - self.alphas_cumprod_prev) / (1 - self.alphas_cumprod)
 
-        self.model = Unet(input_channels=3, image_channels=3, down_channels=(64, 128, 256),
-                          up_channels = (256, 128, 64), time_emb_dim = 32)
+        self.model = Unet(input_channels=3, image_channels=3, down_channels=(64, 64, 64),
+                          up_channels = (64, 64, 64), time_emb_dim = 32)
         self.steps = steps
 
     
@@ -123,30 +123,30 @@ class diffusion(nn.Module):
         return out_reshaped
 
 
-    # def forward_diffusion(self, x_tilde: torch.Tensor, x0: torch.Tensor, t: torch.Tensor, device='cpu'):
-    #     """
-    #     x0: a single sharp image of a batch of sharp images
-    #     x_tilde: the blury image with the same shape as x0
-    #     Takes an image and a timestep as input and returns the noisy version of it at step t
-    #     """
-    #     noise = -(x0 - x_tilde)
-    #     sqrt_alphas_cumprod_t = self.get_step_vals(self.sqrt_alphas_cumprod, t, x0.shape)
-    #     sqrt_one_minus_alphas_cumprod_t = self.get_step_vals(
-    #         self.sqrt_one_minus_alphas_cumprod, t, x0.shape
-    #     )
-    #     x_t = sqrt_alphas_cumprod_t.to(device) * x0.to(device) + sqrt_one_minus_alphas_cumprod_t.to(device) * noise.to(device)
-    #     return (x_t, noise)
-
     def forward_diffusion(self, x_tilde: torch.Tensor, x0: torch.Tensor, t: torch.Tensor, device='cpu'):
         """
         x0: a single sharp image of a batch of sharp images
         x_tilde: the blury image with the same shape as x0
         Takes an image and a timestep as input and returns the noisy version of it at step t
         """
-        noise = x_tilde - x0
-        noise_t = noise * (t.to(device)/(self.steps-1)).reshape(-1, 1, 1, 1)
-        x_t = x0 + noise_t
-        return (x_t, noise_t)
+        noise = -(x0 - x_tilde)
+        sqrt_alphas_cumprod_t = self.get_step_vals(self.sqrt_alphas_cumprod, t, x0.shape)
+        sqrt_one_minus_alphas_cumprod_t = self.get_step_vals(
+            self.sqrt_one_minus_alphas_cumprod, t, x0.shape
+        )
+        x_t = sqrt_alphas_cumprod_t.to(device) * x0.to(device) + sqrt_one_minus_alphas_cumprod_t.to(device) * noise.to(device)
+        return (x_t, noise)
+
+    # def forward_diffusion(self, x_tilde: torch.Tensor, x0: torch.Tensor, t: torch.Tensor, device='cpu'):
+    #     """
+    #     x0: a single sharp image of a batch of sharp images
+    #     x_tilde: the blury image with the same shape as x0
+    #     Takes an image and a timestep as input and returns the noisy version of it at step t
+    #     """
+    #     noise = x_tilde - x0
+    #     noise_t = noise * (t.to(device)/(self.steps-1))
+    #     x_t = x0 + noise_t
+    #     return (x_t, noise_t)
     
     
     def backward_diffusion(self, x_noisy: torch.Tensor, t: torch.Tensor, device='cpu'):
@@ -186,50 +186,27 @@ class process_latent(nn.Module):
         return xs
     
 
-# @torch.no_grad()
-# def sample_timestep(x: torch.Tensor, t=0):
-#     """x shape (B, C, H, W) LATENT iamge at time step t, range[-1, 1]
-#     return the denoised x at the preveious time step
-#     """
-#     # x = encoder_decoder.encode(x)
-#     # x = processor.preprocess(x)
-#     # x_tilde = processor.preprocess(encoder_decoder.encode(x_tilde))
+@torch.no_grad()
+def sample_timestep(x: torch.Tensor, t=0):
+    """x shape (B, C, H, W) LATENT iamge at time step t, range[-1, 1]
+    return the denoised x at the preveious time step
+    """
+    # x = encoder_decoder.encode(x)
+    # x = processor.preprocess(x)
+    # x_tilde = processor.preprocess(encoder_decoder.encode(x_tilde))
 
-#     t = torch.tensor(t).reshape(-1, ).long().to(device)
-#     betas_t = diffuser.get_step_vals(diffuser.betas, t, x.shape).to(device)
-#     sqrt_one_minus_alphas_cumprod = diffuser.get_step_vals(diffuser.sqrt_one_minus_alphas_cumprod, t, x.shape).to(device)
-#     sqrt_recip_alphas_t = diffuser.get_step_vals(diffuser.sqrt_recip_alphas, t, x.shape).to(device)
+    t = torch.tensor(t).reshape(-1, ).long().to(device)
+    betas_t = diffuser.get_step_vals(diffuser.betas, t, x.shape).to(device)
+    sqrt_one_minus_alphas_cumprod = diffuser.get_step_vals(diffuser.sqrt_one_minus_alphas_cumprod, t, x.shape).to(device)
+    sqrt_recip_alphas_t = diffuser.get_step_vals(diffuser.sqrt_recip_alphas, t, x.shape).to(device)
 
-#     noise_t = diffuser.backward_diffusion(x, t, device)
-#     x_prev = sqrt_recip_alphas_t * (x - betas_t * noise_t / sqrt_one_minus_alphas_cumprod)
+    noise_t = diffuser.backward_diffusion(x, t, device)
+    x_prev = sqrt_recip_alphas_t * (x - betas_t * noise_t / sqrt_one_minus_alphas_cumprod)
 
-#     # x_prev = processor.postprocess(x_prev)
-#     # x_prev = encoder_decoder.decode(x_prev)
-#     # x_prev += x_tilde
-#     return x_prev
-
-# @torch.no_grad()
-# def sample_timestep(x: torch.Tensor, t=0):
-#     """x shape (B, C, H, W) LATENT iamge at time step t, range[-1, 1]
-#     return the denoised x at the preveious time step
-#     """
-#     # x = encoder_decoder.encode(x)
-#     # x = processor.preprocess(x)
-#     # x_tilde = processor.preprocess(encoder_decoder.encode(x_tilde))
-
-#     t = torch.tensor(t).reshape(-1, ).long().to(device)
-#     betas_t = diffuser.get_step_vals(diffuser.betas, t, x.shape).to(device)
-#     sqrt_one_minus_alphas_cumprod = diffuser.get_step_vals(diffuser.sqrt_one_minus_alphas_cumprod, t, x.shape).to(device)
-#     sqrt_recip_alphas_t = diffuser.get_step_vals(diffuser.sqrt_recip_alphas, t, x.shape).to(device)
-
-#     noise_t = diffuser.backward_diffusion(x, t, device)
-#     x_prev = sqrt_recip_alphas_t * (x - betas_t * noise_t / sqrt_one_minus_alphas_cumprod)
-
-#     # x_prev = processor.postprocess(x_prev)
-#     # x_prev = encoder_decoder.decode(x_prev)
-#     # x_prev += x_tilde
-#     return x_prev
-
+    # x_prev = processor.postprocess(x_prev)
+    # x_prev = encoder_decoder.decode(x_prev)
+    # x_prev += x_tilde
+    return x_prev
 
 
 @torch.no_grad()
@@ -239,18 +216,36 @@ def sample_plot_image(blur: torch.Tensor, diffusion_steps=300):
     plt.axis('off')
     num_images = 10
     stepsize = diffusion_steps/num_images
-    img = processor.preprocess(encoder_decoder.encode(blur))
+    # img = processor.preprocess(encoder_decoder.encode(blur))
+    img = blur
 
     for i in tqdm(range(diffusion_steps-1, -1, -1)):
         img = sample_timestep(img, i)  
-        img = torch.clamp(img, -1, 1)
+        img = torch.clamp(img, 0, 1)
 
         if i%stepsize == 0:
-            img_og = encoder_decoder.decode(processor.postprocess(img))
+            # img_og = encoder_decoder.decode(processor.postprocess(img))
             plt.subplot(1, num_images, int(i/stepsize)+1)
-            show_tensor_image(img_og[0])
+            # show_tensor_image(img_og[0])
+            show_tensor_image(img[0])
             # break
     plt.savefig('test_cld.png')
+
+
+@torch.no_grad()
+def get_clear_image(blur: torch.Tensor, diffusion_steps=300):
+    """blur shape (B, C, H, W) as in the dataset object, range[0, 1]"""
+    # plt.figure(figsize=(15,15))
+    # plt.axis('off')
+    num_images = 10
+    stepsize = diffusion_steps/num_images
+    # img = processor.preprocess(encoder_decoder.encode(blur))
+    img = blur
+
+    for i in range(diffusion_steps-1, -1, -1):
+        img = sample_timestep(img, i)  
+        img = torch.clamp(img, 0, 1)
+    return img
 
 
 def visualize_tensor(tensor):
@@ -300,27 +295,6 @@ def visualize_tensor(tensor):
     plt.savefig('noisy_images.png')
 
 
-@torch.no_grad()
-def get_clear_image(blur: torch.Tensor, diffusion_steps=30):
-    """blur shape (B, C, H, W) as in the dataset object, range[0, 1]"""
-    # plt.figure(figsize=(15,15))
-    # plt.axis('off')
-    num_images = 10
-    stepsize = diffusion_steps/num_images
-    # img = processor.preprocess(encoder_decoder.encode(blur))
-    x_T = blur
-    t = torch.tensor(diffusion_steps-1).reshape(-1,).to(device)
-    noise_pred = diffuser.backward_diffusion(x_T, t, device)
-
-    x0 = x_T - noise_pred
-    x0 = torch.clamp(x0, 0, 1)
-    # for i in range(diffusion_steps-1, -1, -1):
-    #     img = sample_timestep(img, i)  
-    #     img = torch.clamp(img, 0, 1)
-
-    return x0
-
-
 def validate(diffuser, test_loader):
     # diffuser.model.load_state_dict(torch.load(os.path.join(folder, 'params/diffusion/con_pix_diffusion0.pt'), map_location=device))
     diffuser.model.eval()
@@ -335,7 +309,7 @@ def validate(diffuser, test_loader):
             ssim_i = ssim(yhats*255, ys*255).item()
             psnrs.append(psnr_i)
             ssims.append(ssim_i)
-            # print(psnr_i, ssim_i)
+            print(psnr_i, ssim_i)
     psnr_avg = np.sum(psnrs)/len(test_loader)
     ssim_avg = np.sum(ssims)/len(test_loader)
     return psnr_avg, ssim_avg
@@ -369,7 +343,6 @@ def deblur(diffuser, test_loader, out_folder):
         path = os.path.join(out_folder, f'{i}.png')
         image.save(path)
 
-
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--lr", type=float, default=0.001)
@@ -384,7 +357,7 @@ if __name__ == '__main__':
     #load datasets
     test_path = "/home/liucmu/diffusion_model/sample2/test"
     train = img_dataset(train_path, debug=False, scale=False) # debug = False
-    train_loader = DataLoader(train, config.batch_size, num_workers=4, shuffle=True)
+    train_loader = DataLoader(train, config.batch_size, num_workers=4)
     test = img_dataset(test_path, debug=False, scale=False) # debug = False
     test_loader = DataLoader(test, config.batch_size, num_workers=4)
     print("Number of training and testing: %i, %i" % (len(train), len(test)))
@@ -393,64 +366,14 @@ if __name__ == '__main__':
     processor = process_latent(encoder_decoder.vocab_size)
     diffuser = diffusion(config.diffusion_steps).to(device)
 
-    num_params = sum(p.numel() for p in diffuser.parameters() if p.requires_grad)
-    print('number of trainable parameters: ', num_params)
-
     optimizer = torch.optim.Adam(diffuser.model.parameters(), lr=config.lr)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=config.patience, mode="min")
 
-    ##train
-    # for i in tqdm(range(config.epochs)):
-    #     print(f'epoch {i}')
-    #     epoch_losses = []
-    #     for xs, ys in train_loader:
-    #         xs = xs.to(device)
-    #         ys = ys.to(device)  #shape (B, 3, H, W), range[0, 1]
-            
-    #         optimizer.zero_grad()
-    #         t = torch.randint(0, config.diffusion_steps, (ys.shape[0],), device=device).long()
-    #         y_noisy, noise = diffuser.forward_diffusion(xs, ys, t, device)
-    #         noise_pred = diffuser.backward_diffusion(y_noisy, t, device)
-    #         loss = F.l1_loss(noise_pred, noise)
-    #         loss.backward()
-    #         optimizer.step()
-    #         epoch_losses.append(loss.item())
-
-    #     if i%10 == 0:
-    #         torch.save(diffuser.model.state_dict(), os.path.join(folder, f'params/diffusion/con_pix_diffusion_lin{i}.pt'))
-        
-    #     epoch_loss = round(np.mean(epoch_losses), 3)
-    #     lr = optimizer.param_groups[0]['lr']
-    #     wandb.log({
-    #         'loss': epoch_loss,
-    #         'lr': lr
-    #     })
-    #     print(f'Epoch {i+1} Loss {epoch_loss}')
-    # torch.save(diffuser.model.state_dict(), os.path.join(folder, f'params/diffusion/con_pix_lin_final.pt'))
-
-    ##check forward noisy images
-    # num_images = 10
-    # stepsize = int(config.diffusion_steps/num_images)
-    # with torch.no_grad():
-    #     for xs, ys in test_loader:
-    #         xs = xs.to(device)
-    #         ys = ys.to(device)  #shape (B, 3, H, W), range[0, 1]
-    #         image_tilde = torch.unsqueeze(xs[0], dim=0)
-    #         image = torch.unsqueeze(ys[0], dim=0)
-            
-    #         noisy_images = []
-    #         for idx in range(0, config.diffusion_steps, stepsize):
-    #             t = torch.Tensor([idx]).type(torch.int64)
-    #             noisy_img, noise = diffuser.forward_diffusion(image_tilde, image, t, device)
-    #             noisy_images.append(noisy_img)
-
-    #         noisy_images = torch.concat(noisy_images, dim=0)
-    #         visualize_tensor(noisy_images)
-    #         break
 
     #inference
-    diffuser.model.load_state_dict(torch.load(os.path.join(folder, 'params/diffusion/con_pix_diffusion_lin90.pt'), map_location=device))
+    diffuser.model.load_state_dict(torch.load(os.path.join(folder, 'params/diffusion/con_pix64_final.pt'), map_location=device))
     diffuser.model.eval()
+    #for plot
     # with torch.no_grad():
     #     for xs, ys in test_loader:
     #         xs = xs.to(device)  #shape (B, 3, H, W), range[0, 1]
@@ -460,6 +383,6 @@ if __name__ == '__main__':
 
     #for psnr and ssim
     # psnr, ssim = validate(diffuser, test_loader)
-    # print(f'PNSR {psnr} SSIM {ssim}')    
+    # print(f'PNSR {psnr} SSIM {ssim}')
 
-    deblur(diffuser, test_loader, '/home/liucmu/diffusion_model/sample2/test/lin_diffuser')
+    deblur(diffuser, test_loader, '/home/liucmu/diffusion_model/sample2/test/variance_diffuser64')

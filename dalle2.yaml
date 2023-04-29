@@ -1,0 +1,14 @@
+name: dalle2
+channels:
+  - defaults
+dependencies:
+  - python=3.8
+  - torchaudio==0.10.0
+  - cudatoolkit=11.3
+  - pytorch==1.10.0
+  - torchvision==0.11.0
+  - ipykernel
+  - matplotlib
+  - tqdm
+  - pandas
+prefix: /home/liucmu/miniconda3/envs/dalle2
